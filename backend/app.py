@@ -227,7 +227,7 @@ def login(data: LoginRequest):
 
 # BMI endpoint
 @app.post('/api/bmi')
-def calculate_bmi(data: BMIRequest):
+def calculate_bmi(data: BMIRequest, request: Request):
     height = float(data.height)
     weight = float(data.weight)
     bmi = weight / ((height / 100) ** 2)
@@ -240,7 +240,7 @@ def calculate_bmi(data: BMIRequest):
     else:
         category = "Obese"
     new_bmi = BMI(
-        user_id=get_current_user_id(),
+        user_id=get_current_user_id(request),
         height=height,
         weight=weight,
         bmi=bmi,
@@ -253,9 +253,9 @@ def calculate_bmi(data: BMIRequest):
 
 # Diet plan endpoints
 @app.get('/api/diet-plan')
-def get_diet_plan(bmi: float = Query(...)):
+def get_diet_plan(bmi: float = Query(...), request: Request = None):
     diet_plan = fastapi_db.session.query(DietPlan).filter_by(
-        user_id=get_current_user_id(),
+        user_id=get_current_user_id(request),
         bmi=bmi
     ).order_by(DietPlan.created_at.desc()).first()
     if diet_plan:
@@ -265,11 +265,11 @@ def get_diet_plan(bmi: float = Query(...)):
         return generate_diet_plan_handler(bmi)
 
 @app.post('/api/diet-plan')
-def regenerate_diet_plan(data: DietPlanRequest):
+def regenerate_diet_plan(data: DietPlanRequest, request: Request):
     bmi = float(data.bmi)
-    return generate_diet_plan_handler(bmi)
+    return generate_diet_plan_handler(bmi, request)
 
-def generate_diet_plan_handler(bmi: float):
+def generate_diet_plan_handler(bmi: float, request: Request = None):
     if bmi < 18.5:
         plan = {
             'breakfast': [
@@ -362,7 +362,7 @@ def generate_diet_plan_handler(bmi: float):
             ]
         }
     new_plan = DietPlan(
-        user_id=get_current_user_id(),
+        user_id=get_current_user_id(request),
         bmi=bmi,
         plan=json.dumps(plan)
     )
@@ -373,10 +373,10 @@ def generate_diet_plan_handler(bmi: float):
 
 # Medical record endpoints
 @app.post('/api/records')
-def add_medical_record(data: MedicalRecordRequest):
+def add_medical_record(data: MedicalRecordRequest, request: Request):
     record_date = datetime.strptime(data.date, '%Y-%m-%d').date()
     new_record = MedicalRecord(
-        user_id=get_current_user_id(),
+        user_id=get_current_user_id(request),
         date=record_date,
         bp=data.bloodPressure,
         sugar=float(data.bloodSugar),
@@ -388,9 +388,9 @@ def add_medical_record(data: MedicalRecordRequest):
     return JSONResponse(status_code=201, content={'success': True, 'message': 'Medical record added successfully'})
 
 @app.get('/api/records')
-def get_medical_records():
+def get_medical_records(request: Request):
     records = fastapi_db.session.query(MedicalRecord).filter_by(
-        user_id=get_current_user_id()
+        user_id=get_current_user_id(request)
     ).order_by(MedicalRecord.date.desc()).all()
     return JSONResponse(status_code=200, content={'success': True, 'records': [record.to_dict() for record in records]})
 

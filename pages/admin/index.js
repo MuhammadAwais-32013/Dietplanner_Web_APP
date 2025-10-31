@@ -59,6 +59,11 @@ export default function AdminDashboard() {
           response = await axios.get(`${API_URL}/admin/medical-records?user_id=${userIdMR}`);
           formattedData = response.data.records || [];
           break;
+        case 'feedback':
+          const userIdFB = selectedUser ? selectedUser : 'all';
+          response = await axios.get(`${API_URL}/admin/feedback?user_id=${userIdFB}`);
+          formattedData = response.data.feedback || [];
+          break;
         default:
           formattedData = [];
       }
@@ -246,6 +251,40 @@ export default function AdminDashboard() {
             </table>
           </div>
         );
+
+      case 'feedback':
+        return (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 border">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aspect</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rating</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comments</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Suggestion</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {data.map((feedback) => (
+                  <tr key={feedback.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{feedback.id}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{feedback.user_id}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">{feedback.aspect}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{feedback.rating || 'N/A'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{feedback.comments}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{feedback.suggestion || 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(feedback.created_at).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
       
       default:
         return <div>Select a tab to view data</div>;
@@ -394,7 +433,7 @@ export default function AdminDashboard() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
           <p className="text-gray-600">
-            View and manage users, BMI records, diet plans, and medical records.
+            View and manage users, BMI records, diet plans, medical records, and user feedback.
           </p>
         </div>
 
@@ -440,6 +479,16 @@ export default function AdminDashboard() {
               }`}
             >
               Medical Records
+            </button>
+            <button
+              onClick={() => handleTabChange('feedback')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'feedback'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Feedback
             </button>
           </nav>
         </div>

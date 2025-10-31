@@ -12,7 +12,8 @@ export default function DatabaseViewer() {
     users: [],
     bmi: [],
     dietPlans: [],
-    medicalRecords: []
+    medicalRecords: [],
+    feedback: []
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -40,18 +41,20 @@ export default function DatabaseViewer() {
     
     try {
       // Fetch all data in parallel
-      const [usersRes, bmiRes, dietPlansRes, medicalRecordsRes] = await Promise.all([
+      const [usersRes, bmiRes, dietPlansRes, medicalRecordsRes, feedbackRes] = await Promise.all([
         axios.get(`${API_URL}/admin/users`),
         axios.get(`${API_URL}/admin/bmi`),
         axios.get(`${API_URL}/admin/diet-plans`),
-        axios.get(`${API_URL}/admin/medical-records`)
+        axios.get(`${API_URL}/admin/medical-records`),
+        axios.get(`${API_URL}/admin/feedback`)
       ]);
 
       setData({
         users: usersRes.data.users || [],
         bmi: bmiRes.data.bmi_records || [],
         dietPlans: dietPlansRes.data.diet_plans || [],
-        medicalRecords: medicalRecordsRes.data.records || []
+        medicalRecords: medicalRecordsRes.data.records || [],
+        feedback: feedbackRes.data.feedback || []
       });
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -177,9 +180,47 @@ export default function DatabaseViewer() {
   };
 
   // Function to render medical records table
+  // Function to render feedback table
+  const renderFeedbackTable = () => {
+    if (data.feedback.length === 0) return <p className="text-gray-500 text-center py-4">No feedback available</p>;
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aspect</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rating</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comments</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Suggestion</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {data.feedback.map(feedback => (
+              <tr key={feedback.id}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{feedback.id}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{feedback.user_id}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">{feedback.aspect}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{feedback.rating || 'N/A'}</td>
+                <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{feedback.comments}</td>
+                <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{feedback.suggestion || 'N/A'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {new Date(feedback.created_at).toLocaleString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   const renderMedicalRecordsTable = () => {
     if (data.medicalRecords.length === 0) return <p className="text-gray-500 text-center py-4">No medical records available</p>;
-    
+
     return (
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
@@ -421,6 +462,19 @@ export default function DatabaseViewer() {
               </div>
               <div className="border-t border-gray-200">
                 {renderMedicalRecordsTable()}
+              </div>
+            </div>
+
+            {/* Feedback Table */}
+            <div className="bg-white shadow overflow-hidden rounded-lg">
+              <div className="px-4 py-5 sm:px-6 bg-purple-50">
+                <h2 className="text-lg font-medium text-gray-900">Feedback Table</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  {data.feedback.length} records found
+                </p>
+              </div>
+              <div className="border-t border-gray-200">
+                {renderFeedbackTable()}
               </div>
             </div>
           </div>
