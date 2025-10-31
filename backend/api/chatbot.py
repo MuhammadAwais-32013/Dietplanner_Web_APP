@@ -28,7 +28,8 @@ def extract_response_constraints(message: str) -> Dict[str, Any]:
     # Check for line count specifications - handle more variations
     line_patterns = [
         r'(?:in|within|use|give|write|just)?\s*(\d+)(?:\s*(?:to|-)\s*(\d+))?\s*(?:line|lines?)',
-        r'(\d+)(?:\s*(?:to|-)\s*(\d+))?\s*(?:line|lines?)\s*(?:answer|response)?'
+        r'(\d+)(?:\s*(?:to|-)\s*(\d+))?\s*(?:line|lines?)\s*(?:answer|response|max)?',
+        r'(?:plan|diet plan|response)\s*(?:in|within)\s*(\d+)(?:\s*(?:to|-)\s*(\d+))?\s*(?:line|lines?)'
     ]
     
     for pattern in line_patterns:
@@ -39,6 +40,10 @@ def extract_response_constraints(message: str) -> Dict[str, Any]:
             constraints['min_lines'] = min_lines
             constraints['max_lines'] = max_lines
             break
+    
+    # Check if this is a diet plan request
+    diet_plan_keywords = ['diet plan', 'meal plan', 'day plan', 'week plan', 'food plan']
+    constraints['is_diet_plan'] = any(keyword in message.lower() for keyword in diet_plan_keywords)
     
     return constraints
 
@@ -592,6 +597,71 @@ def format_concise_response(raw_text: str, constraints: Dict[str, Any]) -> str:
     
     return main_response
 
+def format_diet_plan_with_constraints(raw_text: str, max_lines: int) -> str:
+    """
+    Format a diet plan to fit within the specified line limit.
+    
+    Args:
+        raw_text: Raw diet plan text
+        max_lines: Maximum number of lines allowed
+    
+    Returns:
+        Formatted diet plan text within line limit
+    """
+    lines = raw_text.strip().split('\n')
+    actual_lines = [line for line in lines if line.strip()]
+    
+    if len(actual_lines) <= max_lines:
+        return raw_text
+    
+    # Extract days and their content
+    days = []
+    current_day = []
+    for line in actual_lines:
+        if line.startswith('Day '):
+            if current_day:
+                days.append(current_day)
+            current_day = [line]
+        else:
+            current_day.append(line)
+    if current_day:
+        days.append(current_day)
+    
+    # If we have more days than max lines, we need to severely compress
+    if len(days) >= max_lines:
+        compressed_days = []
+        for day_lines in days:
+            day_header = day_lines[0]
+            meals = [line for line in day_lines[1:] if any(meal in line.lower() for meal in ['breakfast', 'lunch', 'dinner'])]
+            compressed = [day_header] + [' | '.join(meals)]
+            compressed_days.extend(compressed)
+        return '\n'.join(compressed_days[:max_lines])
+    
+    # Otherwise, try to fit as much as possible
+    compressed_plan = []
+    lines_per_day = max(1, (max_lines - len(days)) // len(days))
+    
+    for day_lines in days:
+        day_header = day_lines[0]
+        content = day_lines[1:]
+        
+        # Keep essential meals and combine others
+        essential_meals = []
+        for line in content:
+            if any(meal in line.lower() for meal in ['breakfast', 'lunch', 'dinner']):
+                essential_meals.append(line)
+            elif 'snack' in line.lower():
+                continue  # Skip snacks to save space
+        
+        # Compress if needed
+        if len(essential_meals) > lines_per_day:
+            compressed_meals = ' | '.join(essential_meals)
+            compressed_plan.extend([day_header, compressed_meals])
+        else:
+            compressed_plan.extend([day_header] + essential_meals[:lines_per_day])
+    
+    return '\n'.join(compressed_plan[:max_lines])
+
 def format_response(raw_text: str, is_diet_plan: bool = False, constraints: Optional[Dict[str, Any]] = None) -> str:
     """
     Create clean, professional responses like ChatGPT with minimal formatting.
@@ -606,10 +676,23 @@ def format_response(raw_text: str, is_diet_plan: bool = False, constraints: Opti
     """
     if not raw_text or not raw_text.strip():
         return raw_text
+    
+    # If length constraints specified
+    if constraints and (constraints.get('min_lines') is not None or constraints.get('max_lines') is not None):
+        lines = raw_text.strip().split('\n')
+        actual_lines = [line for line in lines if line.strip()]
         
-    # If length constraints specified, use concise formatter
-    if constraints:
-        return format_concise_response(raw_text, constraints)
+        # Check if we need to trim or expand the response
+        if constraints.get('max_lines') and len(actual_lines) > constraints['max_lines']:
+            # If it's a diet plan, use special handling
+            if is_diet_plan:
+                return format_diet_plan_with_constraints(raw_text, constraints['max_lines'])
+            # For regular responses, trim to max lines
+            return '\n'.join(actual_lines[:constraints['max_lines']])
+        
+        # If we have fewer lines than minimum required, don't modify
+        if constraints.get('min_lines') and len(actual_lines) < constraints['min_lines']:
+            return raw_text
     
     # Regular formatting for unconstrained responses
     # Step 1: Basic cleanup
@@ -823,12 +906,29 @@ async def send_message(session_id: str, message_data: ChatMessage):
 
             if requested_days is not None:
                 if requested_days in supported_days:
-                    # Generate a day-wise plan for the exact number of days
+                    # Extract line constraints if any
+                    constraints = extract_response_constraints(message_data.message)
+                    line_limit_text = ""
+                    format_instruction = "For each day include: Breakfast:, Mid-Morning Snack:, Lunch:, Afternoon Snack:, Dinner: with portions and simple timing."
+                    
+                    if constraints.get('min_lines') or constraints.get('max_lines'):
+                        line_limit_text = "\nCRITICAL FORMATTING REQUIREMENTS:"
+                        if constraints.get('min_lines') and constraints.get('max_lines'):
+                            line_limit_text += f"\n- Total response MUST be between {constraints['min_lines']} and {constraints['max_lines']} lines"
+                        elif constraints.get('max_lines'):
+                            line_limit_text += f"\n- Total response MUST NOT exceed {constraints['max_lines']} lines"
+                            
+                        format_instruction = "For each day include essential meals (Breakfast, Lunch, Dinner) with portions. Use concise format."
+                        line_limit_text += "\n- Use abbreviated format to meet line limit"
+                        line_limit_text += "\n- Combine similar days if needed"
+                        line_limit_text += "\n- Focus on essential information only"
+                        line_limit_text += "\n- Skip optional sections if needed to meet line limit"
+
                     prompt = f"""
 You are a clinical dietitian specializing in diabetes and hypertension management. Create a personalized diet plan.
 
-Duration: EXACTLY {requested_days} days. Output MUST be day-wise with headings 'Day 1:' through 'Day {requested_days}:'.
-For each day include: Breakfast:, Mid-Morning Snack:, Lunch:, Afternoon Snack:, Dinner: with portions and simple timing. Do not group by week or repeat weekly cycles. Generate unique entries up to Day {requested_days}.
+Duration: EXACTLY {requested_days} days. Output MUST be day-wise with headings 'Day 1:' through 'Day {requested_days}:'.{line_limit_text}
+{format_instruction}
 
 Context from uploaded documents:
 {retrieved_context}
