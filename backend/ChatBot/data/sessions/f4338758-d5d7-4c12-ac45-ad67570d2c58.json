@@ -1,0 +1,18 @@
+{
+  "session_id": "f4338758-d5d7-4c12-ac45-ad67570d2c58",
+  "user_data": {
+    "hasDiabetes": true,
+    "diabetesType": "type1",
+    "diabetesLevel": "controlled",
+    "hasHypertension": false,
+    "systolic": "",
+    "diastolic": "",
+    "height": "170",
+    "weight": "70"
+  },
+  "files": [
+    "Recommendatio letter FYP.pdf"
+  ],
+  "faiss_dir": "/media/muhammad-awais-qarni/Code && Read/Dietplanner_/backend/api/../ChatBot/data/uploads/f4338758-d5d7-4c12-ac45-ad67570d2c58/faiss",
+  "created_at": "2025-10-31T22:51:04.650695"
+}
