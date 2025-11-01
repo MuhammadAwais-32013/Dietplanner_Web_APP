@@ -61,9 +61,7 @@ def is_diet_related_question(message: str) -> bool:
         # Adding weight loss and fat reduction related terms
         'weight loss', 'lose weight', 'reduce fat', 'burn fat', 'slim', 
         'obesity', 'overweight', 'belly fat', 'body fat', 'metabolism',
-        'diet tips', 'weight management', 'healthy weight', 'reduces fat',
-        'loss fat', 'lose fat', 'fat loss', 'fat reduction', 'reduce weight',
-        'shed fat', 'cut fat', 'fat burning', 'burn calories'
+        'diet tips', 'weight management', 'healthy weight', 'reduces fat'
     ]
     
     # Process message for better matching
@@ -898,7 +896,6 @@ async def send_message(session_id: str, message_data: ChatMessage):
         faiss_dir = os.path.join(CHATBOT_DATA_DIR, 'uploads', session_id, 'faiss')
         requested_days = None
         supported_days = {7, 10, 14, 21, 30}
-        sources = []
 
         # Check if the question is diet-related
         if not is_diet_related_question(message_lower):
@@ -1006,20 +1003,18 @@ Formatting:
                 constraints = extract_response_constraints(message_data.message)
                 length_guideline = ""
                 
-                if constraints and (constraints.get('min_lines') is not None or constraints.get('max_lines') is not None):
+                if constraints:
                     response_type = "STRICT LENGTH-CONTROLLED RESPONSE"
-                    min_lines = constraints.get('min_lines', 0)
-                    max_lines = constraints.get('max_lines', min_lines)
-                    length_instruction = f"CRITICAL: Your entire response must be EXACTLY {min_lines} sentences."
-                    if max_lines > min_lines:
-                        length_instruction = f"CRITICAL: Your entire response must be between {min_lines} and {max_lines} sentences."
+                    length_instruction = f"CRITICAL: Your entire response must be EXACTLY {constraints['min_lines']} sentences."
+                    if constraints['max_lines'] > constraints['min_lines']:
+                        length_instruction = f"CRITICAL: Your entire response must be between {constraints['min_lines']} and {constraints['max_lines']} sentences."
                     
                     length_guideline = f"""
 RESPONSE TYPE: {response_type}
 {length_instruction}
 
 STRICT RULES:
-1. Provide ONLY {min_lines}-{max_lines} complete sentences
+1. Provide ONLY {constraints['min_lines']}-{constraints['max_lines']} complete sentences
 2. Each sentence = one clear, factual statement ending with a period
 3. NO bullet points, NO lists, NO extra sections
 4. NO Lifestyle Recommendations section
@@ -1075,18 +1070,15 @@ Guidelines:
         # Format the response for consistent styling
         # Check if this is a diet plan response
         is_diet_plan_response = requested_days is not None and requested_days in supported_days
-        # Only pass constraints if they have meaningful values
-        format_constraints = None
-        if constraints and (constraints.get('min_lines') is not None or constraints.get('max_lines') is not None):
-            format_constraints = constraints
         response_text = format_response(
             response_text,
             is_diet_plan=is_diet_plan_response,
-            constraints=format_constraints
+            constraints=constraints if constraints else None
         )
         
-        # Extract sources from retrieved context (only if we have context and haven't set sources yet)
-        if retrieved_context and len(sources) == 0:
+        # Extract sources from retrieved context
+        sources = []
+        if retrieved_context:
             try:
                 retriever = KnowledgeBaseRetriever(faiss_dir)
                 results = retriever.retrieve(message_data.message, top_k=3)
@@ -1119,14 +1111,7 @@ Guidelines:
             meta={"session_id": session_id, "user_data": user_data}
         )
         
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
     except Exception as e:
-        # Log the full error for debugging
-        import traceback
-        error_trace = traceback.format_exc()
-        print(f"Error processing message for session {session_id}: {error_trace}")
         raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
 
 @router.websocket("/ws/chat/{session_id}")
