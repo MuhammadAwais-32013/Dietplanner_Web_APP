@@ -771,20 +771,27 @@ def map_duration_to_days(duration: str) -> Optional[int]:
 
 
 def parse_days_from_text(message: str) -> Optional[int]:
-    """Extract requested number of days from free text like 'plan for 30 days' or '2 weeks' or '1 month'."""
+    """Extract requested number of days from free text like 'plan for 30 days' or '2 weeks' or '1 month'.
+    
+    Accepts any day count from 1-30. Also handles 'day', '1 day', '2 days' etc.
+    """
     msg = message.lower()
-    # Explicit days, e.g., 10 days / 14 day
+    # Explicit days, e.g., 1 day, 3 days, 10 days, 14 day
     m = re.search(r"(\d+)\s*day(s)?", msg)
     if m:
         try:
-            return int(m.group(1))
+            days = int(m.group(1))
+            if 1 <= days <= 30:
+                return days
         except Exception:
             pass
-    # Weeks, e.g., 1 week / 2 weeks
+    # Weeks, e.g., 1 week / 2 weeks / 3 weeks / 4 weeks (convert to days)
     m = re.search(r"(\d+)\s*week(s)?", msg)
     if m:
         try:
-            return int(m.group(1)) * 7
+            days = int(m.group(1)) * 7
+            if 1 <= days <= 30:
+                return days
         except Exception:
             pass
     # Month (~30 days)
@@ -795,11 +802,182 @@ def parse_days_from_text(message: str) -> Optional[int]:
     return None
 
 
+def is_medical_emergency(message: str) -> bool:
+    """Detect if the user is reporting a medical emergency or acute condition requiring immediate dietary guidance."""
+    emergency_keywords = [
+        'fever', 'high fever', 'cold', 'flu', 'cough', 'headache', 'migraine',
+        'nausea', 'vomit', 'diarrhea', 'upset stomach', 'food poisoning',
+        'sore throat', 'inflammation', 'pain', 'ache', 'sick', 'illness',
+        'infection', 'virus', 'bacterial', 'allergic reaction', 'allergy attack',
+        'stomach ache', 'acute', 'emergency', 'urgent', 'immediately',
+        'right now', 'asap', 'quick', 'quick action', 'help me',
+        'chills', 'aches', 'body ache', 'joint pain', 'weakness',
+        'fatigue', 'dizzy', 'dizziness', 'shortness of breath'
+    ]
+    msg = message.lower()
+    return any(keyword in msg for keyword in emergency_keywords)
+
+def quick_medical_advice(message: str, user_data: Dict[str, Any]) -> str:
+    """Provide immediate dietary guidance for acute medical conditions without requiring day selection."""
+    msg_lower = message.lower()
+    
+    # Detect specific conditions
+    if any(word in msg_lower for word in ['fever', 'high fever']):
+        return """
+🚨 **IMMEDIATE DIETARY GUIDANCE FOR HIGH FEVER**
+
+**Quick Actions (First 2-4 hours):**
+1. **Stay Hydrated** - Drink water, warm herbal tea, or warm lemon water with honey every 15-20 minutes
+2. **Light & Hydrating Foods** - Warm broths, clear soups, coconut water, fruit juices
+3. **Avoid** - Heavy foods, spicy foods, caffeine, dairy initially
+
+**Recommended Diet for Today:**
+
+**Breakfast (8:00 AM):** Warm honey lemon water or warm milk with turmeric and honey
+
+**Mid-Morning Snack (10:00 AM):** Fresh orange juice or warm vegetable broth
+
+**Lunch (12:30 PM):** Light chicken/vegetable soup with soft rice or crackers
+
+**Afternoon Snack (3:00 PM):** Coconut water or warm ginger-lemon tea
+
+**Dinner (7:00 PM):** Light moong dal khichdi with ghee, or boiled vegetables with salt
+
+**Before Bed (9:00 PM):** Warm milk with turmeric (haldi) and a pinch of black pepper
+
+**Hydration Schedule:**
+- 8-10 glasses of water throughout the day
+- Oral rehydration solution (ORS) if available
+- Warm fluids preferred over cold
+
+**Important Notes:**
+⚠️ **If fever persists beyond 24-48 hours or exceeds 103°F (39.4°C), seek medical attention immediately.**
+⚠️ **Monitor for: severe headache, chest pain, confusion, persistent vomiting, or difficulty breathing.**
+
+✅ **Do's:** Rest, hydrate constantly, eat light foods, take warm fluids
+❌ **Don'ts:** Eat heavy/spicy/oily foods, skip meals, stay in cold environment
+
+**This guidance is for educational purposes. Consult your healthcare provider for proper diagnosis and treatment.**
+"""
+    
+    elif any(word in msg_lower for word in ['cold', 'flu', 'cough']):
+        return """
+🚨 **IMMEDIATE DIETARY GUIDANCE FOR COLD/FLU/COUGH**
+
+**Quick Actions:**
+1. **Hydration First** - Warm water, herbal tea, warm lemon juice with honey
+2. **Immune Boosting** - Foods rich in vitamin C, zinc, and antioxidants
+3. **Inflammation Reduction** - Turmeric, ginger, garlic in warm preparations
+
+**Recommended Diet for Today:**
+
+**Breakfast (8:00 AM):** Warm milk with turmeric and honey, or herbal tea with ginger
+
+**Mid-Morning (10:00 AM):** Warm lemon water with honey and ginger
+
+**Lunch (12:30 PM):** Warm chicken/vegetable soup with turmeric and black pepper
+
+**Afternoon (3:00 PM):** Herbal tea (ginger, tulsi, lemon) with honey
+
+**Dinner (7:00 PM):** Light khichdi or soft rice with vegetable curry
+
+**Bedtime (9:00 PM):** Warm milk with turmeric, honey, and pinch of black pepper
+
+**Immunity Boosting Foods to Include:**
+- Ginger tea
+- Garlic (in soups/warm dishes)
+- Turmeric (golden milk)
+- Honey
+- Citrus fruits
+- Warm broths
+
+**Important Notes:**
+⚠️ If symptoms worsen or fever develops, seek medical attention.
+✅ Complete rest + hydration + light nutrition = faster recovery
+
+**This is for educational purposes only. Consult your healthcare provider for medical advice.**
+"""
+    
+    elif any(word in msg_lower for word in ['nausea', 'vomit', 'diarrhea', 'upset stomach']):
+        return """
+🚨 **IMMEDIATE DIETARY GUIDANCE FOR NAUSEA/VOMITING/DIARRHEA**
+
+**First 2-3 Hours - Complete Rest from Food:**
+- Sip water slowly (small amounts every 5 minutes)
+- Oral Rehydration Solution (ORS) if available
+
+**After 3 Hours - Bland Foods Only:**
+
+**Breakfast (8:00 AM):** Plain boiled rice or rice porridge with salt and cumin
+
+**Mid-Morning (10:00 AM):** Warm rice water or thin soup with salt
+
+**Lunch (12:30 PM):** Boiled rice with boiled potato and salt, or soft crackers with water
+
+**Afternoon (3:00 PM):** Apple sauce or banana (easy to digest)
+
+**Dinner (7:00 PM):** Light moong dal or thin rice soup
+
+**Hydration (Very Important):**
+- Coconut water
+- Oral rehydration solution
+- Warm water with salt and sugar
+- Ginger-lemon water in small sips
+
+**Foods to AVOID:**
+❌ Dairy, spicy foods, fatty foods, caffeine, whole grains, raw vegetables
+
+**Foods to PREFER:**
+✅ Boiled rice, crackers, bananas, apples, boiled potatoes, light broths, toast
+
+**Important Notes:**
+⚠️ If vomiting/diarrhea persists beyond 24 hours or you show signs of dehydration (dark urine, dizziness), seek medical help.
+⚠️ Gradual return to normal diet over 3-5 days as symptoms improve.
+
+**This guidance is educational. Please consult a healthcare provider for medical conditions.**
+"""
+    
+    else:
+        # Generic acute condition response
+        return """
+🚨 **IMMEDIATE DIETARY GUIDANCE FOR ACUTE CONDITION**
+
+**Short-Term Relief Approach:**
+
+**Today's Plan - Light & Hydrating:**
+
+**Breakfast (8:00 AM):** Warm lemon water with honey or herbal tea
+
+**Mid-Morning (10:00 AM):** Fresh fruit juice or warm broth
+
+**Lunch (12:30 PM):** Light soup or soft rice with vegetables
+
+**Afternoon (3:00 PM):** Herbal tea or coconut water
+
+**Dinner (7:00 PM):** Easy-to-digest meal (khichdi, porridge, or light curry)
+
+**Bedtime (9:00 PM):** Warm milk or herbal tea
+
+**General Guidelines:**
+✅ Stay hydrated (8-10 glasses of water daily)
+✅ Eat light, warm foods
+✅ Include immune-boosting foods (ginger, turmeric, honey)
+✅ Get adequate rest
+✅ Avoid heavy, spicy, and oily foods
+
+**Important:**
+⚠️ If symptoms persist or worsen, consult your healthcare provider immediately.
+⚠️ This is educational guidance; professional medical advice is always recommended.
+
+**Would you like a full multi-day plan after you recover?** Just let me know: "7 day plan", "10 day plan", etc.
+"""
+
 def unsupported_duration_response() -> str:
     """Polite guidance for unsupported duration requests."""
     return (
-        "I can generate diet plans for these durations: 7 days (1 week), 10 days, 14 days, 21 days, or 30 days (1 month). "
-        "Please choose one of these options."
+        "I can generate diet plans for any duration between 1 and 30 days. "
+        "Please specify: '3 day plan', '1 week plan', '14 days', 'one month', etc. "
+        "I'll create a personalized daily breakdown with meal timings (breakfast, lunch, dinner)."
     )
 
 @router.post("/session")
@@ -905,58 +1083,71 @@ async def send_message(session_id: str, message_data: ChatMessage):
             response_text = format_general_response()
             sources = []
         else:
-            # If user explicitly asks for a plan for N days/weeks/month
-            requested_days = parse_days_from_text(message_lower)
-            supported_days = {7, 10, 14, 21, 30}
+            # Check if this is a medical emergency requiring immediate guidance
+            if is_medical_emergency(message_lower):
+                response_text = quick_medical_advice(message_data.message, user_data)
+                sources = []
+            else:
+                # If user explicitly asks for a plan for N days/weeks/month
+                requested_days = parse_days_from_text(message_lower)
+                min_supported_days = 1
+                max_supported_days = 30
 
-            # Prepare context using RAG functions (used in both branches below)
-            retrieved_context = ""
-            faiss_dir = os.path.join(CHATBOT_DATA_DIR, 'uploads', session_id, 'faiss')
-            if os.path.exists(faiss_dir) and any(f.endswith('.index') for f in os.listdir(faiss_dir)):
-                try:
-                    retriever = KnowledgeBaseRetriever(faiss_dir)
-                    results = retriever.retrieve(message_data.message, top_k=3)
-                    retrieved_context = "\n---\n".join([f"[Source: {r['source']}]\n{r['chunk']}" for r in results])
-                except Exception as e:
-                    print(f"Warning: Error retrieving context: {e}")
+                # Prepare context using RAG functions (used in both branches below)
+                retrieved_context = ""
+                faiss_dir = os.path.join(CHATBOT_DATA_DIR, 'uploads', session_id, 'faiss')
+                if os.path.exists(faiss_dir) and any(f.endswith('.index') for f in os.listdir(faiss_dir)):
+                    try:
+                        retriever = KnowledgeBaseRetriever(faiss_dir)
+                        results = retriever.retrieve(message_data.message, top_k=3)
+                        retrieved_context = "\n---\n".join([f"[Source: {r['source']}]\n{r['chunk']}" for r in results])
+                    except Exception as e:
+                        print(f"Warning: Error retrieving context: {e}")
 
-            # Get comprehensive medical data
-            medical_data = extract_medical_data_from_files(session_id)
-            
-            # Get OCR data (fallback for backward compatibility)
-            ocr_data = None
-            session_dir = os.path.join(CHATBOT_DATA_DIR, 'uploads', session_id)
-            for file in os.listdir(session_dir):
-                if file.endswith('_ocr.json'):
-                    with open(os.path.join(session_dir, file), 'r') as f:
-                        ocr_data = json.load(f)
-                    break
+                # Get comprehensive medical data
+                medical_data = extract_medical_data_from_files(session_id)
+                
+                # Get OCR data (fallback for backward compatibility)
+                ocr_data = None
+                session_dir = os.path.join(CHATBOT_DATA_DIR, 'uploads', session_id)
+                for file in os.listdir(session_dir):
+                    if file.endswith('_ocr.json'):
+                        with open(os.path.join(session_dir, file), 'r') as f:
+                            ocr_data = json.load(f)
+                        break
 
-            if requested_days is not None:
-                if requested_days in supported_days:
-                    # Extract line constraints if any
-                    constraints = extract_response_constraints(message_data.message)
-                    line_limit_text = ""
-                    format_instruction = "For each day include: Breakfast:, Mid-Morning Snack:, Lunch:, Afternoon Snack:, Dinner: with portions and simple timing."
-                    
-                    if constraints.get('min_lines') or constraints.get('max_lines'):
-                        line_limit_text = "\nCRITICAL FORMATTING REQUIREMENTS:"
-                        if constraints.get('min_lines') and constraints.get('max_lines'):
-                            line_limit_text += f"\n- Total response MUST be between {constraints['min_lines']} and {constraints['max_lines']} lines"
-                        elif constraints.get('max_lines'):
-                            line_limit_text += f"\n- Total response MUST NOT exceed {constraints['max_lines']} lines"
-                            
-                        format_instruction = "For each day include essential meals (Breakfast, Lunch, Dinner) with portions. Use concise format."
-                        line_limit_text += "\n- Use abbreviated format to meet line limit"
-                        line_limit_text += "\n- Combine similar days if needed"
-                        line_limit_text += "\n- Focus on essential information only"
-                        line_limit_text += "\n- Skip optional sections if needed to meet line limit"
+                if requested_days is not None:
+                    if min_supported_days <= requested_days <= max_supported_days:
+                        # Extract line constraints if any
+                        constraints = extract_response_constraints(message_data.message)
+                        line_limit_text = ""
+                        format_instruction = "For each day include meals with SPECIFIC TIMES:\n- Breakfast (8:00 AM)\n- Mid-Morning Snack (10:00 AM)\n- Lunch (12:30 PM)\n- Afternoon Snack (3:00 PM)\n- Dinner (7:00 PM)\nWith portions and simple timing."
+                        
+                        if constraints.get('min_lines') or constraints.get('max_lines'):
+                            line_limit_text = "\nCRITICAL FORMATTING REQUIREMENTS:"
+                            if constraints.get('min_lines') and constraints.get('max_lines'):
+                                line_limit_text += f"\n- Total response MUST be between {constraints['min_lines']} and {constraints['max_lines']} lines"
+                            elif constraints.get('max_lines'):
+                                line_limit_text += f"\n- Total response MUST NOT exceed {constraints['max_lines']} lines"
+                                
+                            format_instruction = "For each day include essential meals (Breakfast, Lunch, Dinner) with times. Use concise format."
+                            line_limit_text += "\n- Use abbreviated format to meet line limit"
+                            line_limit_text += "\n- Combine similar days if needed"
+                            line_limit_text += "\n- Focus on essential information only"
+                            line_limit_text += "\n- Skip optional sections if needed to meet line limit"
 
-                    prompt = f"""
+                        prompt = f"""
 You are a clinical dietitian specializing in diabetes and hypertension management. Create a personalized diet plan.
 
-Duration: EXACTLY {requested_days} days. Output MUST be day-wise with headings 'Day 1:' through 'Day {requested_days}:'.{line_limit_text}
-{format_instruction}
+Duration: EXACTLY {requested_days} days. Output MUST be day-wise with headings 'Day 1:' through 'Day {requested_days}:'.
+For each day include meals with SPECIFIC TIMES:
+- Breakfast (8:00 AM): [meal details with portions]
+- Mid-Morning Snack (10:00 AM): [optional light snack]
+- Lunch (12:30 PM): [meal details with portions]
+- Afternoon Snack (3:00 PM): [optional light snack]
+- Dinner (7:00 PM): [meal details with portions]
+
+Do not group by week or repeat weekly cycles. Generate unique entries up to Day {requested_days}.{line_limit_text}
 
 Context from uploaded documents:
 {retrieved_context}
@@ -985,36 +1176,37 @@ REQUIRED SECTIONS (include these at the end):
 
 Formatting:
 - Start each day with 'Day X:' on a new line
-- Keep it concise and readable
+- Include all 5 meal times with specific hours (8 AM, 10 AM, 12:30 PM, 3 PM, 7 PM)
+- Keep portions and meals concise and readable
 - Always include the two required sections at the end
 - Consider the comprehensive medical data when creating personalized recommendations
 """
-                    response_text = generate_diet_plan_with_gemini(prompt)
-                    # Save to session diet plans
-                    if "diet_plans" not in session:
-                        session["diet_plans"] = []
-                    session["diet_plans"].append({
-                        "duration": f"{requested_days}_days",
-                        "plan": response_text,
-                        "timestamp": asyncio.get_event_loop().time()
-                    })
+                        response_text = generate_diet_plan_with_gemini(prompt)
+                        # Save to session diet plans
+                        if "diet_plans" not in session:
+                            session["diet_plans"] = []
+                        session["diet_plans"].append({
+                            "duration": f"{requested_days}_days",
+                            "plan": response_text,
+                            "timestamp": asyncio.get_event_loop().time()
+                        })
+                    else:
+                        response_text = unsupported_duration_response()
                 else:
-                    response_text = unsupported_duration_response()
-            else:
-                # General diet-related response (not an explicit multi-day plan request)
-                # Check for response length constraints
-                constraints = extract_response_constraints(message_data.message)
-                length_guideline = ""
-                
-                if constraints and (constraints.get('min_lines') is not None or constraints.get('max_lines') is not None):
-                    response_type = "STRICT LENGTH-CONTROLLED RESPONSE"
-                    min_lines = constraints.get('min_lines', 0)
-                    max_lines = constraints.get('max_lines', min_lines)
-                    length_instruction = f"CRITICAL: Your entire response must be EXACTLY {min_lines} sentences."
-                    if max_lines > min_lines:
-                        length_instruction = f"CRITICAL: Your entire response must be between {min_lines} and {max_lines} sentences."
+                    # General diet-related response (not an explicit multi-day plan request)
+                    # Check for response length constraints
+                    constraints = extract_response_constraints(message_data.message)
+                    length_guideline = ""
                     
-                    length_guideline = f"""
+                    if constraints and (constraints.get('min_lines') is not None or constraints.get('max_lines') is not None):
+                        response_type = "STRICT LENGTH-CONTROLLED RESPONSE"
+                        min_lines = constraints.get('min_lines', 0)
+                        max_lines = constraints.get('max_lines', min_lines)
+                        length_instruction = f"CRITICAL: Your entire response must be EXACTLY {min_lines} sentences."
+                        if max_lines > min_lines:
+                            length_instruction = f"CRITICAL: Your entire response must be between {min_lines} and {max_lines} sentences."
+                        
+                        length_guideline = f"""
 RESPONSE TYPE: {response_type}
 {length_instruction}
 
@@ -1038,7 +1230,7 @@ Lean proteins like chicken and fish are excellent choices for managing blood pre
 
 REMINDER: Break this format and you fail the task entirely."""
 
-                prompt = f"""
+                    prompt = f"""
 You are a clinical dietitian specializing in diabetes and hypertension management. Provide a helpful, evidence-based response to the following question.
 
 User Question: {message_data.message}
