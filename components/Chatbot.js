@@ -33,7 +33,7 @@ const Chatbot = () => {
     weight: ''
   });
 
-  const { user } = useAuth();
+  const { isLoggedIn } = useAuth();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -901,15 +901,37 @@ This AI-generated diet plan is for educational purposes only and is NOT a substi
     <div>
       {!isOpen ? (
         <div className="fixed bottom-6 right-6 z-50">
-          <button
-            onClick={() => setIsOpen(true)}
-            className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-full p-4 shadow-lg transition-all duration-300 transform hover:scale-110"
-            title="Open AI Diet Assistant"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-          </button>
+          {isLoggedIn ? (
+            // ── Logged in: normal chatbot launch button ──────────────────
+            <button
+              onClick={() => setIsOpen(true)}
+              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-full p-4 shadow-lg transition-all duration-300 transform hover:scale-110"
+              title="Open AI Diet Assistant"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </button>
+          ) : (
+            // ── Not logged in: dimmed button + tooltip to prompt login ────
+            <div className="relative group">
+              <button
+                disabled
+                className="bg-gray-300 text-gray-400 rounded-full p-4 shadow-md cursor-not-allowed"
+                title="Please log in to use the AI Assistant"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </button>
+              {/* Tooltip */}
+              <div className="absolute bottom-14 right-0 w-48 bg-gray-900 text-white text-xs rounded-xl px-3 py-2.5 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <p className="font-semibold mb-0.5">🔒 Login Required</p>
+                <p className="text-gray-300">Please log in to use the AI Diet Assistant.</p>
+                <div className="absolute bottom-[-6px] right-5 w-3 h-3 bg-gray-900 rotate-45" />
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="fixed bottom-6 right-6 z-50 w-[360px] h-[540px] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
