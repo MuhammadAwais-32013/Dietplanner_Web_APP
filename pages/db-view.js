@@ -5,516 +5,267 @@ import Head from 'next/head';
 import axios from 'axios';
 import BackToDashboard from '../components/BackToDashboard';
 
+const API_URL = 'http://127.0.0.1:8000/api';
+
+const SECTIONS = [
+  { key: 'users', label: 'Users', icon: '👥', bg: 'bg-blue-50', text: 'text-blue-700', ring: 'bg-blue-100' },
+  { key: 'bmi', label: 'BMI Records', icon: '⚖️', bg: 'bg-teal-50', text: 'text-teal-700', ring: 'bg-teal-100' },
+  { key: 'dietPlans', label: 'Diet Plans', icon: '🥗', bg: 'bg-green-50', text: 'text-green-700', ring: 'bg-green-100' },
+  { key: 'medicalRecords', label: 'Medical Records', icon: '🩺', bg: 'bg-rose-50', text: 'text-rose-700', ring: 'bg-rose-100' },
+  { key: 'feedback', label: 'Feedback', icon: '💬', bg: 'bg-purple-50', text: 'text-purple-700', ring: 'bg-purple-100' },
+];
+
+function getBmiPill(cat) {
+  const map = { 'underweight': 'bg-sky-100 text-sky-800', 'normal weight': 'bg-emerald-100 text-emerald-800', 'overweight': 'bg-amber-100 text-amber-800', 'obese': 'bg-rose-100 text-rose-800' };
+  return map[(cat || '').toLowerCase()] || 'bg-gray-100 text-gray-700';
+}
+
+function Stars({ val }) {
+  const n = Number(val) || 0;
+  return <span className="flex gap-0.5">{[1, 2, 3, 4, 5].map(i => <span key={i} className={i <= n ? 'text-amber-400' : 'text-gray-200'}>★</span>)}</span>;
+}
+
+const TH = ({ c }) => <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 border-b border-gray-200">{c}</th>;
+const TD = ({ c, cls = '' }) => <td className={`px-5 py-3.5 text-sm text-gray-700 ${cls}`}>{c}</td>;
+
+function SectionCard({ sec, rows, collapsed, onToggle, children }) {
+  return (
+    <div id={`s-${sec.key}`} className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+      <button onClick={onToggle} className="w-full flex items-center justify-between px-6 py-4 border-b border-gray-100 hover:bg-gray-50 transition-colors text-left">
+        <div className="flex items-center gap-2.5">
+          <div className={`w-8 h-8 rounded-lg ${sec.ring} flex items-center justify-center text-lg`}>{sec.icon}</div>
+          <div>
+            <p className="font-semibold text-gray-800 text-sm">{sec.label}</p>
+            <p className="text-xs text-gray-400">{rows} records</p>
+          </div>
+        </div>
+        <svg className={`h-4 w-4 text-gray-400 transition-transform ${collapsed ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {!collapsed && (rows === 0 ? <p className="text-sm text-gray-400 text-center py-10">No records available</p> : children)}
+    </div>
+  );
+}
+
 export default function DatabaseViewer() {
   const router = useRouter();
   const { isLoggedIn, isLoading } = useAuth();
-  const [data, setData] = useState({
-    users: [],
-    bmi: [],
-    dietPlans: [],
-    medicalRecords: [],
-    feedback: []
-  });
+  const [data, setData] = useState({ users: [], bmi: [], dietPlans: [], medicalRecords: [], feedback: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [collapsed, setCollapsed] = useState({});
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [showPlanModal, setShowPlanModal] = useState(false);
-
-  const API_URL = 'http://127.0.0.1:8000/api';
 
   useEffect(() => {
-    // Only redirect if auth loading is complete and user is not logged in
-    if (!isLoading && !isLoggedIn) {
-      router.push('/login');
-      return;
-    }
+    if (!isLoading && !isLoggedIn) { router.push('/login'); return; }
+    if (isLoggedIn && !isLoading) load();
+  }, [isLoggedIn, isLoading]);
 
-    // Only load data if user is logged in and not in loading state
-    if (isLoggedIn && !isLoading) {
-      fetchAllData();
-    }
-  }, [isLoggedIn, isLoading, router]);
-
-  const fetchAllData = async () => {
-    setLoading(true);
-    setError('');
-    
+  const load = async () => {
+    setLoading(true); setError('');
     try {
-      // Fetch all data in parallel
-      const [usersRes, bmiRes, dietPlansRes, medicalRecordsRes, feedbackRes] = await Promise.all([
+      const [uR, bR, dR, mR, fR] = await Promise.all([
         axios.get(`${API_URL}/admin/users`),
         axios.get(`${API_URL}/admin/bmi`),
         axios.get(`${API_URL}/admin/diet-plans`),
         axios.get(`${API_URL}/admin/medical-records`),
-        axios.get(`${API_URL}/admin/feedback`)
+        axios.get(`${API_URL}/admin/feedback`),
       ]);
-
-      setData({
-        users: usersRes.data.users || [],
-        bmi: bmiRes.data.bmi_records || [],
-        dietPlans: dietPlansRes.data.diet_plans || [],
-        medicalRecords: medicalRecordsRes.data.records || [],
-        feedback: feedbackRes.data.feedback || []
-      });
-    } catch (err) {
-      console.error('Error fetching data:', err);
-      setError('Failed to load database data. Please check that the backend server is running.');
-    } finally {
-      setLoading(false);
-    }
+      setData({ users: uR.data.users || [], bmi: bR.data.bmi_records || [], dietPlans: dR.data.diet_plans || [], medicalRecords: mR.data.records || [], feedback: fR.data.feedback || [] });
+    } catch { setError('Failed to load. Check the backend is running.'); }
+    finally { setLoading(false); }
   };
 
-  // Function to render users table
-  const renderUsersTable = () => {
-    if (data.users.length === 0) return <p className="text-gray-500 text-center py-4">No user data available</p>;
-    
-    return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {data.users.map(user => (
-              <tr key={user.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.email}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {new Date(user.created_at).toLocaleString()}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
+  const toggle = k => setCollapsed(c => ({ ...c, [k]: !c[k] }));
 
-  // Function to render BMI records table
-  const renderBMITable = () => {
-    if (data.bmi.length === 0) return <p className="text-gray-500 text-center py-4">No BMI records available</p>;
-    
-    return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Height (cm)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight (kg)</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BMI</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {data.bmi.map(record => (
-              <tr key={record.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.user_id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.height}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.weight}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.bmi?.toFixed(2) || "N/A"}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <span className={`px-2 py-1 rounded-full text-xs ${getCategoryColorClass(record.category)}`}>
-                    {record.category}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {new Date(record.timestamp).toLocaleString()}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-
-  // Function to render diet plans table
-  const renderDietPlansTable = () => {
-    if (data.dietPlans.length === 0) return <p className="text-gray-500 text-center py-4">No diet plans available</p>;
-    
-    return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BMI</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan Details</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {data.dietPlans.map(plan => (
-              <tr key={plan.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{plan.id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{plan.user_id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{plan.bmi?.toFixed(2) || "N/A"}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {new Date(plan.created_at).toLocaleString()}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-500">
-                  <button
-                    onClick={() => handleViewPlan(plan)}
-                    className="text-blue-600 hover:text-blue-800"
-                  >
-                    View Plan
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-
-  // Function to render medical records table
-  // Function to render feedback table
-  const renderFeedbackTable = () => {
-    if (data.feedback.length === 0) return <p className="text-gray-500 text-center py-4">No feedback available</p>;
-
-    return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aspect</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rating</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comments</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Suggestion</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {data.feedback.map(feedback => (
-              <tr key={feedback.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{feedback.id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{feedback.user_id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">{feedback.aspect}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{feedback.rating || 'N/A'}</td>
-                <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{feedback.comments}</td>
-                <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{feedback.suggestion || 'N/A'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {new Date(feedback.created_at).toLocaleString()}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-
-  const renderMedicalRecordsTable = () => {
-    if (data.medicalRecords.length === 0) return <p className="text-gray-500 text-center py-4">No medical records available</p>;
-
-    return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Blood Pressure</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Blood Sugar</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {data.medicalRecords.map(record => (
-              <tr key={record.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.user_id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.date}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.bloodPressure}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.bloodSugar}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">
-                  {record.notes || <span className="text-gray-400 italic">No notes</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-
-  const handleViewPlan = (plan) => {
-    setSelectedPlan(plan);
-    setShowPlanModal(true);
-  };
-
-  const renderPlanDetails = () => {
-    if (!selectedPlan || !selectedPlan.plan) return null;
-    
-    const plan = selectedPlan.plan;
-    
-    return (
-      <div className="space-y-6">
-        {/* Diet Plan Summary */}
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Diet Plan Summary</h3>
-          <div className="bg-blue-50 p-4 rounded-md">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-gray-500">User ID</p>
-                <p className="font-medium">{selectedPlan.user_id}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">BMI</p>
-                <p className="font-medium">{selectedPlan.bmi?.toFixed(2) || "N/A"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Created Date</p>
-                <p className="font-medium">{new Date(selectedPlan.created_at).toLocaleString()}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Calories</p>
-                <p className="font-medium">{plan.calories || "Not specified"}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Meals Table */}
-        {plan.meals && Object.keys(plan.meals).length > 0 && (
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Meals</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 border">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Meal Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Food Items</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {Object.entries(plan.meals).map(([mealType, items]) => (
-                    <tr key={mealType} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {mealType}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        <ul className="list-disc pl-5 space-y-1">
-                          {Array.isArray(items) ? (
-                            items.map((item, idx) => (
-                              <li key={idx}>{item}</li>
-                            ))
-                          ) : (
-                            <li>No items specified</li>
-                          )}
-                        </ul>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-        
-        {/* Recommendations Table */}
-        {plan.recommendations && plan.recommendations.length > 0 && (
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Recommendations</h3>
-            <div className="bg-white rounded-md border border-gray-200">
-              <ul className="divide-y divide-gray-200">
-                {plan.recommendations.map((recommendation, idx) => (
-                  <li key={idx} className="px-6 py-4 flex items-start">
-                    <div className="flex-shrink-0 h-5 w-5 rounded-full bg-green-100 flex items-center justify-center mr-3 mt-0.5">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3 text-green-600">
-                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <span className="text-sm text-gray-700">{recommendation}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
-        
-        {/* If there are any other important sections in the diet plan, add them here */}
-      </div>
-    );
-  };
-
-  const getCategoryColorClass = (category) => {
-    if (!category) return 'bg-gray-100 text-gray-800';
-    
-    switch (category.toLowerCase()) {
-      case 'underweight':
-        return 'bg-blue-100 text-blue-800';
-      case 'normal weight':
-        return 'bg-green-100 text-green-800';
-      case 'overweight':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'obese':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  if (!isLoggedIn) {
-    return <div className="flex justify-center items-center h-screen">Redirecting to login...</div>;
-  }
+  if (isLoading) return <div className="flex items-center justify-center h-screen"><div className="animate-spin rounded-full h-10 w-10 border-[3px] border-indigo-100 border-t-indigo-600" /></div>;
+  if (!isLoggedIn) return <div className="flex items-center justify-center h-screen text-gray-500">Redirecting…</div>;
 
   return (
     <>
-      <Head>
-        <title>Database Viewer | AI Diet Consultant</title>
-      </Head>
+      <Head><title>DB Viewer | DiaBP</title></Head>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <BackToDashboard />
-        
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Database Viewer</h1>
-          <p className="text-gray-600">
-            View all database records in tabular format.
-          </p>
+      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900 text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-16">
+          <BackToDashboard />
+          <div className="mt-4 flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center text-3xl">🗄️</div>
+            <div>
+              <h1 className="text-2xl font-bold">Database Viewer</h1>
+              <p className="text-indigo-200 text-sm mt-0.5">All tables in real-time tabular view</p>
+            </div>
+          </div>
         </div>
+      </div>
 
-        {loading ? (
-          <div className="flex justify-center items-center py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        ) : error ? (
-          <div className="bg-red-50 p-4 rounded-md border border-red-200 text-red-600 mb-6">
-            <p className="flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-              {error}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {/* Users Table */}
-            <div className="bg-white shadow overflow-hidden rounded-lg">
-              <div className="px-4 py-5 sm:px-6 bg-blue-50">
-                <h2 className="text-lg font-medium text-gray-900">Users Table</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  {data.users.length} records found
-                </p>
-              </div>
-              <div className="border-t border-gray-200">
-                {renderUsersTable()}
-              </div>
-            </div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 pb-16">
 
-            {/* BMI Records Table */}
-            <div className="bg-white shadow overflow-hidden rounded-lg">
-              <div className="px-4 py-5 sm:px-6 bg-green-50">
-                <h2 className="text-lg font-medium text-gray-900">BMI Records Table</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  {data.bmi.length} records found
-                </p>
-              </div>
-              <div className="border-t border-gray-200">
-                {renderBMITable()}
-              </div>
-            </div>
-
-            {/* Diet Plans Table */}
-            <div className="bg-white shadow overflow-hidden rounded-lg">
-              <div className="px-4 py-5 sm:px-6 bg-indigo-50">
-                <h2 className="text-lg font-medium text-gray-900">Diet Plans Table</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  {data.dietPlans.length} records found
-                </p>
-              </div>
-              <div className="border-t border-gray-200">
-                {renderDietPlansTable()}
-              </div>
-            </div>
-
-            {/* Medical Records Table */}
-            <div className="bg-white shadow overflow-hidden rounded-lg">
-              <div className="px-4 py-5 sm:px-6 bg-yellow-50">
-                <h2 className="text-lg font-medium text-gray-900">Medical Records Table</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  {data.medicalRecords.length} records found
-                </p>
-              </div>
-              <div className="border-t border-gray-200">
-                {renderMedicalRecordsTable()}
-              </div>
-            </div>
-
-            {/* Feedback Table */}
-            <div className="bg-white shadow overflow-hidden rounded-lg">
-              <div className="px-4 py-5 sm:px-6 bg-purple-50">
-                <h2 className="text-lg font-medium text-gray-900">Feedback Table</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  {data.feedback.length} records found
-                </p>
-              </div>
-              <div className="border-t border-gray-200">
-                {renderFeedbackTable()}
-              </div>
-            </div>
+        {/* Stat cards */}
+        {!loading && !error && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+            {SECTIONS.map(s => (
+              <button key={s.key} onClick={() => document.getElementById(`s-${s.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className={`flex items-center gap-2.5 rounded-xl px-4 py-3 ${s.bg} hover:shadow-md transition-shadow text-left`}>
+                <span className="text-xl">{s.icon}</span>
+                <div>
+                  <p className={`text-lg font-bold leading-none ${s.text}`}>{(data[s.key] || []).length}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+                </div>
+              </button>
+            ))}
           </div>
         )}
-        
-        {/* Diet Plan Modal */}
-        {showPlanModal && selectedPlan && (
-          <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="diet-plan-modal" role="dialog" aria-modal="true">
-            <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-              {/* Background overlay */}
-              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onClick={() => setShowPlanModal(false)}></div>
-              
-              {/* Modal panel */}
-              <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full">
-                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                  <div className="sm:flex sm:items-start">
-                    <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                      <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4" id="modal-title">
-                        Diet Plan Details
-                      </h3>
-                      <div className="mt-2">
-                        {renderPlanDetails()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                  <button
-                    type="button"
-                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm"
-                    onClick={() => setShowPlanModal(false)}
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
+
+        {loading ? (
+          <div className="flex flex-col items-center py-24 gap-3">
+            <div className="animate-spin rounded-full h-10 w-10 border-[3px] border-indigo-100 border-t-indigo-600" />
+            <p className="text-sm text-gray-400">Loading all tables…</p>
+          </div>
+        ) : error ? (
+          <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 rounded-2xl px-5 py-4">
+            <svg className="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-.75-5.25a.75.75 0 011.5 0v.5a.75.75 0 01-1.5 0v-.5zm0-6a.75.75 0 011.5 0V10a.75.75 0 01-1.5 0V6.75z" clipRule="evenodd" /></svg>
+            <span className="text-sm font-medium">{error}</span>
+            <button onClick={load} className="ml-auto text-xs font-semibold underline">Retry</button>
+          </div>
+        ) : (
+          <div className="space-y-5">
+
+            <SectionCard sec={SECTIONS[0]} rows={data.users.length} collapsed={collapsed.users} onToggle={() => toggle('users')}>
+              <div className="overflow-x-auto"><table className="min-w-full">
+                <thead><tr>{['ID', 'Name', 'Email', 'Registered'].map(h => <TH key={h} c={h} />)}</tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {data.users.map((u, i) => (
+                    <tr key={u.id} className={i % 2 ? 'bg-gray-50/60' : 'bg-white'}>
+                      <TD c={<span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{u.id}</span>} />
+                      <TD c={<div className="flex items-center gap-2"><div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 text-white text-xs font-bold flex items-center justify-center">{u.name?.charAt(0)?.toUpperCase()}</div><span className="font-medium">{u.name}</span></div>} />
+                      <TD c={u.email} cls="text-gray-500" />
+                      <TD c={new Date(u.created_at).toLocaleDateString()} cls="text-gray-400" />
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            </SectionCard>
+
+            <SectionCard sec={SECTIONS[1]} rows={data.bmi.length} collapsed={collapsed.bmi} onToggle={() => toggle('bmi')}>
+              <div className="overflow-x-auto"><table className="min-w-full">
+                <thead><tr>{['ID', 'User ID', 'Height', 'Weight', 'BMI', 'Category', 'Date'].map(h => <TH key={h} c={h} />)}</tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {data.bmi.map((r, i) => (
+                    <tr key={r.id} className={i % 2 ? 'bg-gray-50/60' : 'bg-white'}>
+                      <TD c={<span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{r.id}</span>} />
+                      <TD c={r.user_id} /><TD c={r.height} /><TD c={r.weight} />
+                      <TD c={<span className="font-bold">{r.bmi?.toFixed(1) || 'N/A'}</span>} />
+                      <TD c={<span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${getBmiPill(r.category)}`}>{r.category}</span>} />
+                      <TD c={new Date(r.timestamp).toLocaleDateString()} cls="text-gray-400" />
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            </SectionCard>
+
+            <SectionCard sec={SECTIONS[2]} rows={data.dietPlans.length} collapsed={collapsed.dietPlans} onToggle={() => toggle('dietPlans')}>
+              <div className="overflow-x-auto"><table className="min-w-full">
+                <thead><tr>{['ID', 'User ID', 'BMI', 'Created', 'Details'].map(h => <TH key={h} c={h} />)}</tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {data.dietPlans.map((p, i) => (
+                    <tr key={p.id} className={i % 2 ? 'bg-gray-50/60' : 'bg-white'}>
+                      <TD c={<span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{p.id}</span>} />
+                      <TD c={p.user_id} />
+                      <TD c={<span className="font-bold">{p.bmi?.toFixed(1) || 'N/A'}</span>} />
+                      <TD c={new Date(p.created_at).toLocaleDateString()} cls="text-gray-400" />
+                      <TD c={<button onClick={() => setSelectedPlan(p)} className="text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg transition-colors">View Plan →</button>} />
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            </SectionCard>
+
+            <SectionCard sec={SECTIONS[3]} rows={data.medicalRecords.length} collapsed={collapsed.medicalRecords} onToggle={() => toggle('medicalRecords')}>
+              <div className="overflow-x-auto"><table className="min-w-full">
+                <thead><tr>{['ID', 'User ID', 'Date', 'Blood Pressure', 'Blood Sugar', 'Notes'].map(h => <TH key={h} c={h} />)}</tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {data.medicalRecords.map((r, i) => (
+                    <tr key={r.id} className={i % 2 ? 'bg-gray-50/60' : 'bg-white'}>
+                      <TD c={<span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{r.id}</span>} />
+                      <TD c={r.user_id} /><TD c={r.date} cls="text-gray-400" />
+                      <TD c={<span className="font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded text-xs">{r.bloodPressure} mmHg</span>} />
+                      <TD c={<span className="font-semibold text-orange-700 bg-orange-50 px-2 py-0.5 rounded text-xs">{r.bloodSugar} mg/dL</span>} />
+                      <TD c={r.notes || '—'} cls="max-w-xs truncate text-gray-400 italic text-xs" />
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            </SectionCard>
+
+            <SectionCard sec={SECTIONS[4]} rows={data.feedback.length} collapsed={collapsed.feedback} onToggle={() => toggle('feedback')}>
+              <div className="overflow-x-auto"><table className="min-w-full">
+                <thead><tr>{['ID', 'User ID', 'Aspect', 'Rating', 'Comments', 'Suggestion', 'Date'].map(h => <TH key={h} c={h} />)}</tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {data.feedback.map((f, i) => (
+                    <tr key={f.id} className={i % 2 ? 'bg-gray-50/60' : 'bg-white'}>
+                      <TD c={<span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{f.id}</span>} />
+                      <TD c={f.user_id} />
+                      <TD c={<span className="capitalize inline-flex px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 text-xs font-semibold">{f.aspect}</span>} />
+                      <TD c={<Stars val={f.rating} />} />
+                      <TD c={f.comments} cls="max-w-xs truncate" />
+                      <TD c={f.suggestion || '—'} cls="max-w-xs truncate text-gray-400 italic text-xs" />
+                      <TD c={new Date(f.created_at).toLocaleDateString()} cls="text-gray-400" />
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            </SectionCard>
           </div>
         )}
       </div>
+
+      {/* Diet Plan Modal */}
+      {selectedPlan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4 flex items-center justify-between text-white flex-shrink-0">
+              <div className="flex items-center gap-2"><span className="text-xl">🥗</span><h3 className="font-bold text-lg">Diet Plan Details</h3></div>
+              <button onClick={() => setSelectedPlan(null)} className="hover:bg-white/20 p-1.5 rounded-lg transition-colors">
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+              </button>
+            </div>
+            <div className="overflow-y-auto px-6 py-5 flex-1">
+              {selectedPlan.plan ? (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-3">
+                    {[['User ID', selectedPlan.user_id], ['BMI', selectedPlan.bmi?.toFixed(2) || 'N/A'], ['Created', new Date(selectedPlan.created_at).toLocaleDateString()], ['Calories', selectedPlan.plan.calories || 'Not specified']].map(([l, v]) => (
+                      <div key={l} className="bg-gray-50 rounded-xl p-3 border border-gray-100"><p className="text-xs text-gray-400">{l}</p><p className="font-semibold text-gray-800 text-sm">{v}</p></div>
+                    ))}
+                  </div>
+                  {selectedPlan.plan.meals && Object.keys(selectedPlan.plan.meals).length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">🍽 Meals</h4>
+                      <div className="rounded-xl border border-gray-200 overflow-hidden">
+                        {Object.entries(selectedPlan.plan.meals).map(([t, items], idx) => (
+                          <div key={t} className={`flex gap-3 px-4 py-3 text-sm ${idx % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                            <span className="font-semibold text-gray-700 capitalize min-w-[90px]">{t}</span>
+                            <span className="text-gray-500">{Array.isArray(items) ? items.join(', ') : 'No items'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {selectedPlan.plan.recommendations?.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">✅ Recommendations</h4>
+                      <ul className="space-y-1.5">{selectedPlan.plan.recommendations.map((r, i) => <li key={i} className="flex gap-2 text-sm text-gray-600"><span className="text-emerald-500 shrink-0">✓</span>{r}</li>)}</ul>
+                    </div>
+                  )}
+                </div>
+              ) : <p className="text-gray-400 text-sm">No plan data available.</p>}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end flex-shrink-0">
+              <button onClick={() => setSelectedPlan(null)} className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
-} 
+}
