@@ -1,0 +1,18 @@
+{
+  "session_id": "5a81a8d2-71b5-4d54-941b-79bb518fb15f",
+  "user_data": {
+    "hasDiabetes": false,
+    "diabetesType": "",
+    "diabetesLevel": "",
+    "hasHypertension": true,
+    "systolic": "120",
+    "diastolic": "80",
+    "height": "170",
+    "weight": "80"
+  },
+  "files": [
+    "Benevolent Form.pdf"
+  ],
+  "faiss_dir": "/media/muhammad-awais-qarni/Code_Read/Dietplanner_/backend/api/../ChatBot/data/uploads/5a81a8d2-71b5-4d54-941b-79bb518fb15f/faiss",
+  "created_at": "2026-02-23T21:15:13.501483"
+}

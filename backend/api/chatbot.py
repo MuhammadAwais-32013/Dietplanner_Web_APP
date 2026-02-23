@@ -725,8 +725,10 @@ def format_response(raw_text: str, is_diet_plan: bool = False, constraints: Opti
     text = '\n'.join(lines)
     text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)  # Final cleanup
     
-    # Step 6: Ensure required sections are present for diet plans and health guidance
-    if is_diet_plan or any(keyword in text.lower() for keyword in ['diet', 'nutrition', 'health', 'lifestyle']):
+    # Step 6: Ensure required sections are present for diet plans and health guidance.
+    # IMPORTANT: Do NOT append these sections to short refusals or one-line responses.
+    is_short_response = len(text.strip().splitlines()) <= 3 or len(text.strip()) < 200
+    if not is_short_response and (is_diet_plan or any(keyword in text.lower() for keyword in ['diet', 'nutrition', 'health', 'lifestyle'])):
         # Check if Lifestyle Recommendations section exists
         if 'lifestyle recommendations' not in text.lower():
             text += '\n\nLifestyle Recommendations:\n- Exercise: 150 minutes of moderate activity per week\n- Stress Management: Practice yoga, meditation, or deep breathing\n- Sleep: Aim for 7-9 hours of quality sleep\n- Hydration: Drink at least 8 glasses of water daily\n- Regular Monitoring: Check blood sugar and blood pressure as advised'
@@ -738,14 +740,27 @@ def format_response(raw_text: str, is_diet_plan: bool = False, constraints: Opti
     return text
 
 def contains_inappropriate_content(text: str) -> bool:
-    """Check if the text contains inappropriate or harmful content."""
-    inappropriate_terms = {
-        'human', 'poison', 'toxic', 'kill', 'deadly', 'harmful', 'illegal',
-        'dangerous', 'explosive', 'weapon', 'suicide', 'murder', 'cannibalism'
-    }
+    """Check if the text contains inappropriate or harmful content.
     
+    Uses whole-word regex matching to avoid false positives (e.g., 'harmful'
+    in 'harmful foods to avoid' should NOT trigger this).
+    """
+    # Whole-phrase patterns — intentionally typo-tolerant (e.g. 'humen', 'hueman').
+    harmful_patterns = [
+        r'\beat\s+hu[a-z]{2,6}\b',           # 'eat human', 'eat humen', 'eat hueman'
+        r'\bcannibal(ism|istic)?\b',
+        r'\bhu[a-z]{2,6}\s+(flesh|meat|body)\b',
+        r'\bpoison\s+(someone|food|water|drink)\b',
+        r'\b(how\s+to\s+)?(kill|murder|assassinate)\b',
+        r'\bsuicide\b',
+        r'\bexplosive\b',
+        r'\bweapon\b',
+        r'\billegal\s+(drug|substance)\b',
+        r'\b(methamphetamine|heroin|cocaine)\b',
+        r'\btoxic\s+(substance|chemical|material)\b',
+    ]
     text_lower = text.lower()
-    return any(term in text_lower for term in inappropriate_terms)
+    return any(re.search(pattern, text_lower) for pattern in harmful_patterns)
 
 def format_general_response() -> str:
     """Short, polite response for questions outside scope."""
@@ -756,18 +771,26 @@ def format_general_response() -> str:
 
 
 def map_duration_to_days(duration: str) -> Optional[int]:
-    """Map supported duration keys to exact day counts."""
-    mapping = {
-        "7_days": 7,
-        "10_days": 10,
-        "14_days": 14,
-        "21_days": 21,
-        "30_days": 30,
-        # Also support the old format for backward compatibility
-        "1_week": 7,
-        "1_month": 30,
+    """Map duration keys to exact day counts.
+    
+    Supports:
+    - Named keys: '7_days', '14_days', '1_week', '1_month'
+    - Any arbitrary 'N_days' format where 1 <= N <= 30
+    """
+    named = {
+        "7_days": 7, "10_days": 10, "14_days": 14,
+        "21_days": 21, "30_days": 30,
+        "1_week": 7, "1_month": 30,
     }
-    return mapping.get(duration)
+    if duration in named:
+        return named[duration]
+    # Fallback: parse arbitrary 'N_days' sent from the frontend (e.g., '3_days', '1_days')
+    m = re.match(r'^(\d+)_days?$', duration)
+    if m:
+        days = int(m.group(1))
+        if 1 <= days <= 30:
+            return days
+    return None
 
 
 def parse_days_from_text(message: str) -> Optional[int]:
@@ -823,154 +846,106 @@ def quick_medical_advice(message: str, user_data: Dict[str, Any]) -> str:
     
     # Detect specific conditions
     if any(word in msg_lower for word in ['fever', 'high fever']):
-        return """
-🚨 **IMMEDIATE DIETARY GUIDANCE FOR HIGH FEVER**
+        return """🚨 **IMMEDIATE DIETARY GUIDANCE FOR HIGH FEVER**
 
-**Quick Actions (First 2-4 hours):**
-1. **Stay Hydrated** - Drink water, warm herbal tea, or warm lemon water with honey every 15-20 minutes
-2. **Light & Hydrating Foods** - Warm broths, clear soups, coconut water, fruit juices
-3. **Avoid** - Heavy foods, spicy foods, caffeine, dairy initially
+**Today's Quick Diet Plan:**
 
-**Recommended Diet for Today:**
+**Breakfast (8:00 AM):** Warm honey lemon water or warm milk with turmeric
 
-**Breakfast (8:00 AM):** Warm honey lemon water or warm milk with turmeric and honey
+**Mid-Morning Snack (10:00 AM):** Fresh orange juice or warm broth
 
-**Mid-Morning Snack (10:00 AM):** Fresh orange juice or warm vegetable broth
+**Lunch (12:30 PM):** Light chicken soup with soft rice or moong dal khichdi
 
-**Lunch (12:30 PM):** Light chicken/vegetable soup with soft rice or crackers
+**Afternoon Snack (3:00 PM):** Coconut water or warm ginger tea with honey
 
-**Afternoon Snack (3:00 PM):** Coconut water or warm ginger-lemon tea
+**Dinner (7:00 PM):** Boiled vegetables with salt and ghee, or light rice soup
 
-**Dinner (7:00 PM):** Light moong dal khichdi with ghee, or boiled vegetables with salt
+**Important:**
+- Stay hydrated: Drink 8-10 glasses of water throughout the day
+- Avoid: Heavy foods, spicy foods, dairy, caffeine
+- Monitor fever: If it persists >48 hours or exceeds 103°F, seek medical help
+- Rest is key for faster recovery
 
-**Before Bed (9:00 PM):** Warm milk with turmeric (haldi) and a pinch of black pepper
+**Disclaimer:** This is educational guidance. Consult your healthcare provider for proper diagnosis and medical treatment."""
 
-**Hydration Schedule:**
-- 8-10 glasses of water throughout the day
-- Oral rehydration solution (ORS) if available
-- Warm fluids preferred over cold
-
-**Important Notes:**
-⚠️ **If fever persists beyond 24-48 hours or exceeds 103°F (39.4°C), seek medical attention immediately.**
-⚠️ **Monitor for: severe headache, chest pain, confusion, persistent vomiting, or difficulty breathing.**
-
-✅ **Do's:** Rest, hydrate constantly, eat light foods, take warm fluids
-❌ **Don'ts:** Eat heavy/spicy/oily foods, skip meals, stay in cold environment
-
-**This guidance is for educational purposes. Consult your healthcare provider for proper diagnosis and treatment.**
-"""
-    
     elif any(word in msg_lower for word in ['cold', 'flu', 'cough']):
-        return """
-🚨 **IMMEDIATE DIETARY GUIDANCE FOR COLD/FLU/COUGH**
+        return """🚨 **IMMEDIATE DIETARY GUIDANCE FOR COLD/FLU/COUGH**
 
-**Quick Actions:**
-1. **Hydration First** - Warm water, herbal tea, warm lemon juice with honey
-2. **Immune Boosting** - Foods rich in vitamin C, zinc, and antioxidants
-3. **Inflammation Reduction** - Turmeric, ginger, garlic in warm preparations
+**Today's Quick Diet Plan:**
 
-**Recommended Diet for Today:**
+**Breakfast (8:00 AM):** Warm milk with turmeric and honey
 
-**Breakfast (8:00 AM):** Warm milk with turmeric and honey, or herbal tea with ginger
+**Mid-Morning Snack (10:00 AM):** Warm ginger-lemon water with honey
 
-**Mid-Morning (10:00 AM):** Warm lemon water with honey and ginger
+**Lunch (12:30 PM):** Warm chicken/vegetable soup with turmeric and pepper
 
-**Lunch (12:30 PM):** Warm chicken/vegetable soup with turmeric and black pepper
+**Afternoon Snack (3:00 PM):** Herbal tea (ginger, tulsi, or lemon with honey)
 
-**Afternoon (3:00 PM):** Herbal tea (ginger, tulsi, lemon) with honey
+**Dinner (7:00 PM):** Soft rice with light vegetables or khichdi with ghee
 
-**Dinner (7:00 PM):** Light khichdi or soft rice with vegetable curry
+**Immunity Boosters:**
+- Turmeric milk (haldi doodh)
+- Ginger tea with honey
+- Garlic in soups
+- Warm fluids throughout the day
 
-**Bedtime (9:00 PM):** Warm milk with turmeric, honey, and pinch of black pepper
+**Avoid:** Cold water, dairy products (except warm milk with turmeric), spicy foods, heavy meals
 
-**Immunity Boosting Foods to Include:**
-- Ginger tea
-- Garlic (in soups/warm dishes)
-- Turmeric (golden milk)
-- Honey
-- Citrus fruits
-- Warm broths
+**Disclaimer:** This is educational guidance. If symptoms worsen, consult your healthcare provider."""
 
-**Important Notes:**
-⚠️ If symptoms worsen or fever develops, seek medical attention.
-✅ Complete rest + hydration + light nutrition = faster recovery
-
-**This is for educational purposes only. Consult your healthcare provider for medical advice.**
-"""
-    
     elif any(word in msg_lower for word in ['nausea', 'vomit', 'diarrhea', 'upset stomach']):
-        return """
-🚨 **IMMEDIATE DIETARY GUIDANCE FOR NAUSEA/VOMITING/DIARRHEA**
+        return """🚨 **IMMEDIATE DIETARY GUIDANCE FOR NAUSEA/VOMITING/DIARRHEA**
 
-**First 2-3 Hours - Complete Rest from Food:**
-- Sip water slowly (small amounts every 5 minutes)
-- Oral Rehydration Solution (ORS) if available
+**First 3 hours:** Rest from food. Sip water slowly.
 
-**After 3 Hours - Bland Foods Only:**
+**After 3 hours - Today's Quick Plan:**
 
-**Breakfast (8:00 AM):** Plain boiled rice or rice porridge with salt and cumin
+**Light Meal (when comfortable):** Plain boiled rice with salt
 
-**Mid-Morning (10:00 AM):** Warm rice water or thin soup with salt
+**Mid-Day:** Warm rice water or thin soup with salt
 
-**Lunch (12:30 PM):** Boiled rice with boiled potato and salt, or soft crackers with water
+**Afternoon:** Boiled potato with salt, or crackers with water
 
-**Afternoon (3:00 PM):** Apple sauce or banana (easy to digest)
+**Dinner:** Light moong dal or rice porridge
 
-**Dinner (7:00 PM):** Light moong dal or thin rice soup
-
-**Hydration (Very Important):**
-- Coconut water
-- Oral rehydration solution
+**Hydration (VERY Important):**
+- Sip coconut water or oral rehydration solution
 - Warm water with salt and sugar
-- Ginger-lemon water in small sips
+- Small amounts every 5-10 minutes
 
-**Foods to AVOID:**
-❌ Dairy, spicy foods, fatty foods, caffeine, whole grains, raw vegetables
+**Avoid:** Dairy, spicy, fatty, raw foods, caffeine
 
-**Foods to PREFER:**
-✅ Boiled rice, crackers, bananas, apples, boiled potatoes, light broths, toast
+**Warning:** If symptoms persist >24 hours or signs of dehydration (dark urine, dizziness), seek immediate medical help
 
-**Important Notes:**
-⚠️ If vomiting/diarrhea persists beyond 24 hours or you show signs of dehydration (dark urine, dizziness), seek medical help.
-⚠️ Gradual return to normal diet over 3-5 days as symptoms improve.
+**Disclaimer:** This is educational guidance. Consult a healthcare provider for proper treatment."""
 
-**This guidance is educational. Please consult a healthcare provider for medical conditions.**
-"""
-    
     else:
         # Generic acute condition response
-        return """
-🚨 **IMMEDIATE DIETARY GUIDANCE FOR ACUTE CONDITION**
+        return """🚨 **IMMEDIATE DIETARY GUIDANCE FOR YOUR ACUTE CONDITION**
 
-**Short-Term Relief Approach:**
-
-**Today's Plan - Light & Hydrating:**
+**Today's Quick Plan:**
 
 **Breakfast (8:00 AM):** Warm lemon water with honey or herbal tea
 
 **Mid-Morning (10:00 AM):** Fresh fruit juice or warm broth
 
-**Lunch (12:30 PM):** Light soup or soft rice with vegetables
+**Lunch (12:30 PM):** Light soup or soft rice with boiled vegetables
 
 **Afternoon (3:00 PM):** Herbal tea or coconut water
 
-**Dinner (7:00 PM):** Easy-to-digest meal (khichdi, porridge, or light curry)
-
-**Bedtime (9:00 PM):** Warm milk or herbal tea
+**Dinner (7:00 PM):** Easy-to-digest meal (khichdi or light curry)
 
 **General Guidelines:**
 ✅ Stay hydrated (8-10 glasses of water daily)
 ✅ Eat light, warm foods
+✅ Rest adequately
 ✅ Include immune-boosting foods (ginger, turmeric, honey)
-✅ Get adequate rest
-✅ Avoid heavy, spicy, and oily foods
 
-**Important:**
-⚠️ If symptoms persist or worsen, consult your healthcare provider immediately.
-⚠️ This is educational guidance; professional medical advice is always recommended.
+❌ Avoid heavy, spicy, oily, and cold foods
 
-**Would you like a full multi-day plan after you recover?** Just let me know: "7 day plan", "10 day plan", etc.
-"""
+**Important:** If symptoms persist or worsen, consult your healthcare provider immediately.
+
+**Note:** This is for education only. Professional medical advice is recommended."""
 
 def unsupported_duration_response() -> str:
     """Polite guidance for unsupported duration requests."""
@@ -1056,13 +1031,19 @@ async def send_message(session_id: str, message_data: ChatMessage):
         # Basic message validation
         if not message_data or not message_data.message or not message_data.message.strip():
             raise HTTPException(status_code=400, detail="Message cannot be empty")
-            
-        # Check for inappropriate content
+        
+        # GUARD 1 — Harmful/inappropriate content: must fire first, before any routing.
+        # Returns a short, single-sentence refusal. No LLM is called.
         if contains_inappropriate_content(message_data.message):
             return {
-                "response": "I apologize, but I cannot assist with harmful or inappropriate content. I'm designed to provide healthy diet and nutrition advice only.",
+                "response": "Sorry, I can only assist with diet and nutrition advice for diabetes and blood pressure patients.",
                 "sources": []
             }
+        
+        # GUARD 2 — Out-of-scope topics: return a short canned message immediately.
+        # This prevents an unnecessary LLM call and avoids the Lifestyle/Notes appendage.
+        if not is_diet_related_question(message_data.message.lower()):
+            return {"response": format_general_response(), "sources": []}
         
         # Check if ingestion is complete
         if session_id in ingest_tasks and ingest_tasks[session_id]["status"] != "completed":
@@ -1078,11 +1059,8 @@ async def send_message(session_id: str, message_data: ChatMessage):
         supported_days = {7, 10, 14, 21, 30}
         sources = []
 
-        # Check if the question is diet-related
-        if not is_diet_related_question(message_lower):
-            response_text = format_general_response()
-            sources = []
-        else:
+        # Diet-related check already handled by GUARD 2 above; continue with routing.
+        if True:
             # Check if this is a medical emergency requiring immediate guidance
             if is_medical_emergency(message_lower):
                 response_text = quick_medical_advice(message_data.message, user_data)
@@ -1135,19 +1113,23 @@ async def send_message(session_id: str, message_data: ChatMessage):
                             line_limit_text += "\n- Combine similar days if needed"
                             line_limit_text += "\n- Focus on essential information only"
                             line_limit_text += "\n- Skip optional sections if needed to meet line limit"
+                        # Add conciseness instruction for short plans
+                        conciseness_note = ""
+                        if requested_days <= 7:
+                            conciseness_note = "\n\n**IMPORTANT: KEEP IT SHORT AND CONCISE!**\n- Each meal description should be 1-2 lines max (e.g., 'Boiled rice with dal and vegetables')\n- No long descriptions or multiple options\n- Focus on quick, easy meals\n- Minimize Lifestyle Recommendations and Important Notes sections (brief only)"
 
                         prompt = f"""
 You are a clinical dietitian specializing in diabetes and hypertension management. Create a personalized diet plan.
 
 Duration: EXACTLY {requested_days} days. Output MUST be day-wise with headings 'Day 1:' through 'Day {requested_days}:'.
 For each day include meals with SPECIFIC TIMES:
-- Breakfast (8:00 AM): [meal details with portions]
-- Mid-Morning Snack (10:00 AM): [optional light snack]
-- Lunch (12:30 PM): [meal details with portions]
-- Afternoon Snack (3:00 PM): [optional light snack]
-- Dinner (7:00 PM): [meal details with portions]
+- Breakfast (8:00 AM): [meal - brief description]
+- Mid-Morning Snack (10:00 AM): [snack - brief]
+- Lunch (12:30 PM): [meal - brief description]
+- Afternoon Snack (3:00 PM): [snack - brief]
+- Dinner (7:00 PM): [meal - brief description]
 
-Do not group by week or repeat weekly cycles. Generate unique entries up to Day {requested_days}.{line_limit_text}
+Do not group by week or repeat weekly cycles. Generate unique entries up to Day {requested_days}.{line_limit_text}{conciseness_note}
 
 Context from uploaded documents:
 {retrieved_context}
@@ -1171,14 +1153,14 @@ COMPREHENSIVE MEDICAL DATA FROM UPLOADED RECORDS:
 - Risk Factors: {medical_data['summary']['risk_factors']}
 
 REQUIRED SECTIONS (include these at the end):
-1. Lifestyle Recommendations: Include exercise, stress management, sleep, and daily habits
-2. Important Notes: Include medical disclaimers, monitoring tips, and when to consult healthcare providers
+1. Lifestyle Recommendations: Keep brief - just key points
+2. Important Notes: Essential disclaimers and monitoring tips only
 
 Formatting:
 - Start each day with 'Day X:' on a new line
 - Include all 5 meal times with specific hours (8 AM, 10 AM, 12:30 PM, 3 PM, 7 PM)
-- Keep portions and meals concise and readable
-- Always include the two required sections at the end
+- Keep meal descriptions SHORT (1-2 lines each)
+- Keep Lifestyle and Notes sections BRIEF
 - Consider the comprehensive medical data when creating personalized recommendations
 """
                         response_text = generate_diet_plan_with_gemini(prompt)
@@ -1193,46 +1175,70 @@ Formatting:
                     else:
                         response_text = unsupported_duration_response()
                 else:
-                    # General diet-related response (not an explicit multi-day plan request)
-                    # Check for response length constraints
+                    # General diet-related response (not an explicit multi-day plan request).
+                    # Check for response length constraints first.
                     constraints = extract_response_constraints(message_data.message)
-                    length_guideline = ""
+                    has_constraint = bool(constraints and (
+                        constraints.get('min_lines') is not None or
+                        constraints.get('max_lines') is not None
+                    ))
                     
-                    if constraints and (constraints.get('min_lines') is not None or constraints.get('max_lines') is not None):
-                        response_type = "STRICT LENGTH-CONTROLLED RESPONSE"
-                        min_lines = constraints.get('min_lines', 0)
+                    # Build the length instruction block — placed at TOP of prompt so the LLM obeys it.
+                    length_guideline = ""
+                    if has_constraint:
+                        min_lines = constraints.get('min_lines', 1)
                         max_lines = constraints.get('max_lines', min_lines)
-                        length_instruction = f"CRITICAL: Your entire response must be EXACTLY {min_lines} sentences."
-                        if max_lines > min_lines:
-                            length_instruction = f"CRITICAL: Your entire response must be between {min_lines} and {max_lines} sentences."
+                        if max_lines == min_lines:
+                            length_instruction = f"CRITICAL: Your ENTIRE response must be EXACTLY {min_lines} line(s) / sentence(s)."
+                        else:
+                            length_instruction = f"CRITICAL: Your ENTIRE response must be between {min_lines} and {max_lines} lines / sentences."
                         
-                        length_guideline = f"""
-RESPONSE TYPE: {response_type}
+                        length_guideline = f"""### STRICT LENGTH CONSTRAINT — READ THIS FIRST ###
 {length_instruction}
+- Count every non-blank line as one line.
+- NO bullet points, NO sub-sections, NO Lifestyle Recommendations, NO Important Notes.
+- Write a single flowing paragraph (or fewer lines if 1 line is requested).
+- STOP immediately after the required number of lines.
+- Any extra content means the task is FAILED.
+### END OF CONSTRAINT ###
+"""
 
-STRICT RULES:
-1. Provide ONLY {min_lines}-{max_lines} complete sentences
-2. Each sentence = one clear, factual statement ending with a period
-3. NO bullet points, NO lists, NO extra sections
-4. NO Lifestyle Recommendations section
-5. NO Important Notes section
-6. NO disclaimers or extra context
-7. If the question is inappropriate/unsafe, respond with ONE sentence stating you cannot assist
-8. Answer ONLY the specific question asked
+                    # If user asked for a 'diet plan' with a constraint but gave no duration,
+                    # generate a concise overview that honours the line limit.
+                    is_generic_diet_plan_request = any(
+                        kw in message_data.message.lower()
+                        for kw in ['diet plan', 'meal plan', 'food plan', 'eating plan']
+                    )
 
-Format Example for 2-line response:
-"X is good for blood pressure because of Y. However, be mindful of Z when consuming it."
+                    if has_constraint and is_generic_diet_plan_request:
+                        # Build a concise single-response diet summary respecting the constraint.
+                        prompt = f"""
+You are a clinical dietitian for diabetes and hypertension patients.
 
-STOP after exact number of sentences. Any extra content = task failed.
+{length_guideline}
+User request: {message_data.message}
 
-EXAMPLE of correct 2-line response:
-Lean proteins like chicken and fish are excellent choices for managing blood pressure. Complex carbohydrates such as whole grains and vegetables should form the foundation of your meals.
+User profile:
+- Diabetes: {user_data.get('hasDiabetes', False)} ({user_data.get('diabetesType', 'N/A')}, {user_data.get('diabetesLevel', 'N/A')})
+- Blood Pressure: {user_data.get('hasHypertension', False)}, BP {user_data.get('systolic', 'N/A')}/{user_data.get('diastolic', 'N/A')} mmHg
+- BMI context: height {user_data.get('height', 'N/A')} cm, weight {user_data.get('weight', 'N/A')} kg
 
-REMINDER: Break this format and you fail the task entirely."""
+Write a diet recommendation summary that STRICTLY obeys the length constraint above.
+"""
+                    else:
+                        # Standard general diet/health Q&A.
+                        # Only include Lifestyle/Notes sections when there is NO line constraint.
+                        required_sections = ""
+                        if not has_constraint:
+                            required_sections = """\nREQUIRED SECTIONS (include these at the end):
+1. Lifestyle Recommendations: Include exercise, stress management, sleep, and daily habits
+2. Important Notes: Include medical disclaimers, monitoring tips, and when to consult healthcare providers
+"""
 
-                    prompt = f"""
-You are a clinical dietitian specializing in diabetes and hypertension management. Provide a helpful, evidence-based response to the following question.
+                        prompt = f"""
+You are a clinical dietitian specializing in diabetes and hypertension management.
 
+{length_guideline}
 User Question: {message_data.message}
 
 Context from uploaded documents:
@@ -1247,20 +1253,11 @@ User Information:
 - Height: {user_data.get('height', 'N/A')} cm
 - Weight: {user_data.get('weight', 'N/A')} kg
 - Lab Results: {ocr_data if ocr_data else 'N/A'}
-
-{length_guideline}
-
-REQUIRED SECTIONS (include these at the end):
-1. Lifestyle Recommendations: Include exercise, stress management, sleep, and daily habits
-2. Important Notes: Include medical disclaimers, monitoring tips, and when to consult healthcare providers
-
+{required_sections}
 Guidelines:
-- Give clear, actionable advice with simple bullet points
+- Give clear, actionable advice
 - Keep formatting clean and professional
-- If this is a health guidance request, provide practical tips based on the user's specific conditions
-- Focus on lifestyle, diet, exercise, and management strategies
 - Be encouraging and supportive while maintaining medical accuracy
-- Always include the two required sections at the end
 """
                 response_text = generate_diet_plan_with_gemini(prompt)
         
@@ -1371,38 +1368,55 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
                 if not is_diet_related_question(message):
                     response_text = format_general_response()
                 else:
-                    # Prepare context (same as non-streaming version)
-                    retrieved_context = ""
-                    faiss_dir = os.path.join(CHATBOT_DATA_DIR, 'uploads', session_id, 'faiss')
-                    
-                    if os.path.exists(faiss_dir) and any(f.endswith('.index') for f in os.listdir(faiss_dir)):
-                        try:
-                            retriever = KnowledgeBaseRetriever(faiss_dir)
-                            results = retriever.retrieve(message, top_k=3)
-                            retrieved_context = "\n---\n".join([f"[Source: {r['source']}]\n{r['chunk']}" for r in results])
-                        except Exception as e:
-                            print(f"Warning: Error retrieving context: {e}")
-                    
-                    # Get OCR data
-                    ocr_data = None
-                    session_dir = os.path.join(CHATBOT_DATA_DIR, 'uploads', session_id)
-                    for file in os.listdir(session_dir):
-                        if file.endswith('_ocr.json'):
-                            with open(os.path.join(session_dir, file), 'r') as f:
-                                ocr_data = json.load(f)
-                            break
-                    
-                    # Determine if user requested explicit day-wise plan
-                    requested_days = parse_days_from_text(message)
-                    supported_days = {7, 10, 14, 21, 30}
+                    # Check if this is a medical emergency requiring immediate guidance
+                    if is_medical_emergency(message):
+                        response_text = quick_medical_advice(message, user_data)
+                    else:
+                        # Prepare context (same as non-streaming version)
+                        retrieved_context = ""
+                        faiss_dir = os.path.join(CHATBOT_DATA_DIR, 'uploads', session_id, 'faiss')
+                        
+                        if os.path.exists(faiss_dir) and any(f.endswith('.index') for f in os.listdir(faiss_dir)):
+                            try:
+                                retriever = KnowledgeBaseRetriever(faiss_dir)
+                                results = retriever.retrieve(message, top_k=3)
+                                retrieved_context = "\n---\n".join([f"[Source: {r['source']}]\n{r['chunk']}" for r in results])
+                            except Exception as e:
+                                print(f"Warning: Error retrieving context: {e}")
+                        
+                        # Get OCR data
+                        ocr_data = None
+                        session_dir = os.path.join(CHATBOT_DATA_DIR, 'uploads', session_id)
+                        for file in os.listdir(session_dir):
+                            if file.endswith('_ocr.json'):
+                                with open(os.path.join(session_dir, file), 'r') as f:
+                                    ocr_data = json.load(f)
+                                break
+                        
+                        # Determine if user requested explicit day-wise plan
+                        requested_days = parse_days_from_text(message)
+                        min_supported_days = 1
+                        max_supported_days = 30
 
-                    if requested_days is not None:
-                        if requested_days in supported_days:
-                            prompt = f"""
+                        if requested_days is not None:
+                            if min_supported_days <= requested_days <= max_supported_days:
+                                # Add conciseness instruction for short plans
+                                conciseness_note = ""
+                                if requested_days <= 7:
+                                    conciseness_note = "\n\n**IMPORTANT: KEEP IT SHORT AND CONCISE!**\n- Each meal description should be 1-2 lines max\n- No long descriptions\n- Keep Lifestyle and Notes sections BRIEF"
+                                
+                                prompt = f"""
 You are a clinical dietitian specializing in diabetes and hypertension management. Create a personalized diet plan.
 
 Duration: EXACTLY {requested_days} days. Output MUST be day-wise with headings 'Day 1:' through 'Day {requested_days}:'.
-For each day include: Breakfast:, Mid-Morning Snack:, Lunch:, Afternoon Snack:, Dinner: with portions and simple timing. Do not group by week or repeat weekly cycles. Generate unique entries up to Day {requested_days}.
+For each day include meals with SPECIFIC TIMES:
+- Breakfast (8:00 AM): [meal - brief description]
+- Mid-Morning Snack (10:00 AM): [snack - brief]
+- Lunch (12:30 PM): [meal - brief description]
+- Afternoon Snack (3:00 PM): [snack - brief]
+- Dinner (7:00 PM): [meal - brief description]
+
+Do not group by week or repeat weekly cycles. Generate unique entries up to Day {requested_days}.{conciseness_note}
 
 Context from uploaded documents:
 {retrieved_context}
@@ -1418,19 +1432,21 @@ User Information:
 - Lab Results: {ocr_data if ocr_data else 'N/A'}
 
 REQUIRED SECTIONS (include these at the end):
-1. Lifestyle Recommendations: Include exercise, stress management, sleep, and daily habits
-2. Important Notes: Include medical disclaimers, monitoring tips, and when to consult healthcare providers
+1. Lifestyle Recommendations: Keep brief - key points only
+2. Important Notes: Essential disclaimers and monitoring tips only
 
 Formatting:
 - Start each day with 'Day X:' on a new line
-- Keep it concise and readable
+- Include all 5 meal times with specific hours (8 AM, 10 AM, 12:30 PM, 3 PM, 7 PM)
+- Keep meal descriptions SHORT (1-2 lines each)
+- Keep Lifestyle and Notes sections BRIEF
 - Always include the two required sections at the end
 """
-                            response_text = generate_diet_plan_with_gemini(prompt)
+                                response_text = generate_diet_plan_with_gemini(prompt)
+                            else:
+                                response_text = unsupported_duration_response()
                         else:
-                            response_text = unsupported_duration_response()
-                    else:
-                        prompt = f"""
+                            prompt = f"""
 You are a clinical dietitian specializing in diabetes and hypertension management. Provide a helpful, evidence-based response to the following question.
 
 User Question: {message}
@@ -1460,11 +1476,11 @@ Guidelines:
 - Be encouraging and supportive while maintaining medical accuracy
 - Always include the two required sections at the end
 """
-                        response_text = generate_diet_plan_with_gemini(prompt)
+                            response_text = generate_diet_plan_with_gemini(prompt)
                 
                 # Format the response for consistent styling
                 # Check if this is a diet plan response
-                is_diet_plan_response = requested_days is not None and requested_days in supported_days
+                is_diet_plan_response = requested_days is not None and min_supported_days <= requested_days <= max_supported_days
                 response_text = format_response(response_text, is_diet_plan=is_diet_plan_response)
                 
                 try:

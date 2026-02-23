@@ -279,13 +279,35 @@ How can I assist you today?`);
     setStreamingMessage('');
 
     try {
-      // Check for unsupported durations first
-      const unsupportedDuration = validateDietPlanDuration(userMessage);
-      if (unsupportedDuration) {
-        const unsupportedResponse = getUnsupportedDurationResponse(unsupportedDuration);
-        await simulateStreamingResponse(unsupportedResponse);
-        addMessage('assistant', unsupportedResponse);
+      // GUARD: Harmful / unethical query — intercept before any backend call.
+      // Patterns are intentionally broad / typo-tolerant (e.g. 'humen', 'hueman').
+      const harmfulPatterns = [
+        /\beat\s+hu[a-z]{2,6}\b/i,         // 'eat human', 'eat humen', 'eat hueman'
+        /\bcannibal/i,
+        /\bhu[a-z]{2,6}\s+(flesh|meat|body)\b/i,
+        /\b(how\s+to\s+)?(kill|murder|assassinate)\b/i,
+        /\bsuicide\b/i,
+        /\bpoison\s+(someone|food|water)\b/i,
+        /\b(methamphetamine|heroin|cocaine)\b/i,
+      ];
+      if (harmfulPatterns.some(p => p.test(userMessage))) {
+        const refusal = 'Sorry, I cannot assist with that request. This assistant is designed only for diet and nutrition guidance for diabetes and blood pressure patients. Please ask me about healthy eating or your diet plan.';
+        await simulateStreamingResponse(refusal);
+        addMessage('assistant', refusal);
         return;
+      }
+
+      // GUARD: Day count out of range (> 30)
+      // Detect any explicit number of days in the message and reject if > 30.
+      const dayRangeMatch = userMessage.match(/\b(\d+)\s*-?\s*day(s)?\b/i);
+      if (dayRangeMatch) {
+        const requestedDays = parseInt(dayRangeMatch[1], 10);
+        if (requestedDays > 30) {
+          const rangeMsg = `Sorry, I can only generate diet plans for 1 to 30 days. You requested ${requestedDays} days, which is beyond the supported limit. Please specify a duration between 1 and 30 days.`;
+          await simulateStreamingResponse(rangeMsg);
+          addMessage('assistant', rangeMsg);
+          return;
+        }
       }
 
       // Check if it's a supported diet plan request
@@ -374,20 +396,49 @@ Just tell me which duration you prefer!`;
   const extractDietPlanRequest = (message) => {
     const messageLower = message.toLowerCase();
 
-    // Check for specific diet plan requests with exact matching
-    if (messageLower.includes('7 day') || messageLower.includes('7-day') || messageLower.includes('one week') || messageLower.includes('1 week') || messageLower.includes('week')) {
-      return '7_days';
-    } else if (messageLower.includes('10 day') || messageLower.includes('10-day') || messageLower.includes('ten day')) {
-      return '10_days';
-    } else if (messageLower.includes('14 day') || messageLower.includes('14-day') || messageLower.includes('two week') || messageLower.includes('2 week') || messageLower.includes('2week')) {
-      return '14_days';
-    } else if (messageLower.includes('21 day') || messageLower.includes('21-day') || messageLower.includes('three week') || messageLower.includes('3 week') || messageLower.includes('3week')) {
-      return '21_days';
-    } else if (messageLower.includes('30 day') || messageLower.includes('30-day') || messageLower.includes('one month') || messageLower.includes('1 month') || messageLower.includes('month')) {
+    // If the message has a line/length constraint (e.g., "in one line", "in 2 lines"),
+    // it should be handled by the backend generic Q&A path, NOT the duration picker.
+    const hasLineConstraint = /\b(\d+|one|two|three)\s*(line|lines|sentence|sentences)\b/.test(messageLower);
+    if (hasLineConstraint) {
+      return null;
+    }
+
+    // Word-to-number map for written day counts
+    const wordToNum = {
+      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+      'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
+      'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18,
+      'nineteen': 19, 'twenty': 20,
+    };
+
+    // Detect 'X days' / 'X day' with numeric or word-based number (1-30)
+    const numDayMatch = messageLower.match(/\b(\d+)\s*-?\s*day(s)?\b/);
+    if (numDayMatch) {
+      const d = parseInt(numDayMatch[1], 10);
+      if (d >= 1 && d <= 30) return `${d}_days`;
+    }
+
+    // Word-based: e.g., 'one day', 'three days'
+    for (const [word, num] of Object.entries(wordToNum)) {
+      if (messageLower.includes(`${word} day`)) {
+        if (num >= 1 && num <= 30) return `${num}_days`;
+      }
+    }
+
+    // Week-based: 1 week = 7 days, 2 weeks = 14 days, 3 weeks = 21 days, 4 weeks = 28 days
+    const numWeekMatch = messageLower.match(/\b(\d+)\s*-?\s*week(s)?\b/);
+    if (numWeekMatch) {
+      const d = parseInt(numWeekMatch[1], 10) * 7;
+      if (d >= 1 && d <= 30) return `${d}_days`;
+    }
+
+    // Month
+    if (/\b1\s*month\b/.test(messageLower) || /\bone\s*month\b/.test(messageLower)) {
       return '30_days';
     }
 
-    // Check for generic diet plan requests
+    // Generic 'diet plan' / 'meal plan' with no duration → show duration picker
     if (messageLower.includes('diet plan') || messageLower.includes('meal plan') || messageLower.includes('food plan')) {
       return 'generic_diet_plan';
     }
@@ -1193,8 +1244,8 @@ This AI-generated diet plan is for educational purposes only and is NOT a substi
                     >
                       <div
                         className={`max-w-[240px] px-3 py-2 rounded-lg text-sm ${message.sender === 'user'
-                            ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
-                            : 'bg-gray-100 text-gray-800'
+                          ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
+                          : 'bg-gray-100 text-gray-800'
                           }`}
                       >
                         <div className="whitespace-pre-wrap">{formatResponseForDisplay(message.content)}</div>
