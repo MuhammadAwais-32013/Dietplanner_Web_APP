@@ -16,7 +16,7 @@ from typing import List, Optional, Any
 # Import chatbot router
 from api.chatbot import router as chatbot_router, cleanup_expired_sessions
 
-# Load environment variables
+# Load environment variables 
 load_dotenv()
 
 app = FastAPI()
